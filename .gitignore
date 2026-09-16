@@ -1,0 +1,4 @@
+node_modules/
+*.log
+# Gmail アプリパスワード。絶対にコミットしない
+secrets.json

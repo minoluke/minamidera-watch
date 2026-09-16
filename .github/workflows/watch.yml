@@ -1,0 +1,137 @@
+name: 南寺 キャンセル待ちウォッチ
+
+on:
+  # GitHub はスケジュール実行を負荷に応じて激しく間引く（実測: 30分設定に対し中央値179分）。
+  # そこで「起動されたら1つのジョブの中で長時間ループし、自前で間隔を刻む」方式にする。
+  # 間引かれるのは起動だけで、走り出したジョブの中の sleep には干渉されない。
+  # 1回の起動が約5時間半をカバーするので、起動が数時間おきでも監視は途切れない。
+  schedule:
+    - cron: '0,30 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'メールを送らず照会だけ行う'
+        type: boolean
+        default: true
+      test_email:
+        description: '照会はせず、テストメールだけ送って疎通確認する'
+        type: boolean
+        default: false
+      loop_minutes:
+        description: '計測用: この分数だけループする（0なら1回だけ）。state は保存しない'
+        type: string
+        default: '0'
+
+concurrency:
+  # 新しくスケジュール起動されたら、走っている古いループを止めて引き継ぐ。
+  # 手動実行は別グループにして、監視ループを巻き添えで止めないようにする。
+  group: minamidera-watch-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # state.json をコミットして通知済み状態を引き継ぐため
+  actions: write    # 枠の時刻を過ぎたらスケジュールを自分で無効化するため
+
+env:
+  LOOP_MINUTES: 330   # ループを回す時間（GitHub のジョブ上限は6時間）
+  CHECK_INTERVAL: 60  # 照会が終わってから次を始めるまでの待ち時間（秒）。
+                      # 照会は API を2回叩くだけで1〜2秒なので、実効間隔もほぼこの値
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: 空きを監視
+        env:
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          GH_TOKEN: ${{ github.token }}   # gh workflow disable 用
+        run: |
+          set -u
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # state.json に変化があればコミットして次の起動へ引き継ぐ。
+          # 競合したら rebase せず、自分の state を正としてやり直す
+          # （このループが唯一の書き手なので、リモートより手元のほうが新しい）。
+          save_state() {
+            git status --porcelain state.json | grep -q . || return 0
+            for _ in 1 2 3; do
+              cp state.json "$RUNNER_TEMP/state.json"
+              git add state.json
+              git commit -q -m "state: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || true
+              if git push -q 2>/dev/null; then return 0; fi
+              git fetch -q origin main
+              git reset -q --hard origin/main
+              cp "$RUNNER_TEMP/state.json" state.json
+            done
+            echo "state の push を諦めた（ジョブ内では保持されるので監視は継続）"
+          }
+
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            # 手動実行は1回だけ
+            if [ "${{ inputs.test_email }}" = "true" ]; then
+              node check.js --test-email
+              exit $?
+            fi
+            ARGS=""
+            if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --no-email"; fi
+
+            LM="${{ inputs.loop_minutes }}"
+            if [ "${LM:-0}" -gt 0 ] 2>/dev/null; then
+              # 計測用ループ。本番ループと state を取り合わないよう保存しない
+              echo "計測モード: ${LM}分 / CHECK_INTERVAL=${CHECK_INTERVAL}秒"
+              TEND=$(( $(date +%s) + LM * 60 ))
+              M=0
+              while [ "$(date +%s)" -lt "$TEND" ]; do
+                M=$(( M + 1 ))
+                echo "──── 照会 #${M}  $(TZ=Asia/Tokyo date '+%m/%d %H:%M:%S JST') ────"
+                node check.js $ARGS || echo "この回は失敗"
+                REMAIN=$(( TEND - $(date +%s) ))
+                [ "$REMAIN" -le "$CHECK_INTERVAL" ] && break
+                sleep "$CHECK_INTERVAL"
+              done
+              echo "計測終了: ${M} 回照会した"
+              exit 0
+            fi
+
+            node check.js $ARGS
+            save_state
+            exit 0
+          fi
+
+          # スケジュール起動: 時間いっぱいループする
+          END=$(( $(date +%s) + LOOP_MINUTES * 60 ))
+          N=0
+          while [ "$(date +%s)" -lt "$END" ]; do
+            N=$(( N + 1 ))
+            echo "──── 照会 #${N}  $(TZ=Asia/Tokyo date '+%m/%d %H:%M JST') ────"
+            # GitHub の run は bash -e で動くため `node check.js; RC=$?` と書くと
+            # check.js が非ゼロで終了した瞬間にステップごと落ちる。
+            # `|| RC=$?` にすると set -e の対象外になり、ループを続けられる。
+            RC=0
+            node check.js || RC=$?
+            if [ "$RC" -eq 9 ]; then
+              # 枠の時刻を過ぎた。空回りし続けないようスケジュールを止める
+              echo "監視枠の時刻を過ぎたのでワークフローを無効化します"
+              gh workflow disable watch.yml || echo "無効化に失敗（手動で止めてください）"
+              break
+            fi
+            [ "$RC" -ne 0 ] && echo "この回は失敗（ループは継続）"
+            save_state
+            REMAIN=$(( END - $(date +%s) ))
+            [ "$REMAIN" -le "$CHECK_INTERVAL" ] && break
+            sleep "$CHECK_INTERVAL"
+          done
+          echo "ループ終了: ${N} 回照会した"

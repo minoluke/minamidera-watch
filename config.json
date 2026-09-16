@@ -1,0 +1,11 @@
+{
+  "facility": "南寺",
+  "date": "2026-09-27",
+  "watchTimes": ["9:50"],
+  "partySize": 1,
+  "eventos": {
+    "portalId": 797,
+    "eventId": 8483,
+    "contentId": 245856
+  }
+}

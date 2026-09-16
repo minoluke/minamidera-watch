@@ -1,0 +1,16 @@
+{
+  "name": "minamidera-watch",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ベネッセアートサイト直島 家プロジェクト「南寺」の日時指定チケットを監視し、キャンセルで空きが出たらメール通知する",
+  "main": "check.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "check": "node check.js",
+    "dry": "node check.js --no-email",
+    "test-email": "node check.js --test-email"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.14"
+  }
+}

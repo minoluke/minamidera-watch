@@ -1,0 +1,21 @@
+{
+  "scope": "南寺|2026-09-27",
+  "ids": {
+    "large": 18759,
+    "largeTitle": "家プロジェクト「南寺」 2026年9月分",
+    "middle": 99873,
+    "middleTitle": "2026/9/27"
+  },
+  "statuses": {
+    "9:50": {
+      "status": "none",
+      "mark": "×",
+      "label": "売り切れ",
+      "level": 0,
+      "enough": false,
+      "remaining": 0,
+      "smallId": 865168,
+      "saleStatus": "OnSale"
+    }
+  }
+}
