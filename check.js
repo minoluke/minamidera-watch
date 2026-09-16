@@ -286,15 +286,7 @@ async function main() {
       newly.map(fmt).join('\n') +
       `\n\n購入 → ${purchaseUrl(cfg, ids)}\n` +
       `（ログイン後、この日の時間枠一覧が出るので ${newly.join('・')} を選んでください）\n` +
-      `\n── ${dateLabel} の全枠 ──\n` +
-      slots.map((x) => {
-        const st = STATUS[x.remaining_status] || { mark: '?', label: x.remaining_status };
-        const t = normTime(x.title);
-        const o = observed[t];
-        const n = o && o.remaining !== null ? `残り${o.remaining}枚` : st.label;
-        return `  ${st.mark} ${t}　${n}${o ? '　← 監視中' : ''}`;
-      }).join('\n') +
-      `\n\n※ キャンセルは予約時間の30分前まで受け付けられるため、当日朝まで空きが出ることがあります。\n` +
+      `\n※ キャンセルは予約時間の30分前まで受け付けられるため、当日朝まで空きが出ることがあります。\n` +
       `空きは早い者勝ちです。すぐ確保してください。\n` +
       (failures.length ? `\n※ 取得できなかった枠: ${failures.join(', ')}\n` : '') +
       `\n（同じ枠の状態が変わらないあいだは繰り返し通知しません）`;
