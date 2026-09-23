@@ -8,12 +8,12 @@
   },
   "statuses": {
     "9:50": {
-      "status": "none",
-      "mark": "×",
-      "label": "売り切れ",
-      "level": 0,
-      "enough": false,
-      "remaining": 0,
+      "status": "few",
+      "mark": "△",
+      "label": "残りわずか",
+      "level": 2,
+      "enough": true,
+      "remaining": 2,
       "smallId": 865168,
       "saleStatus": "OnSale"
     }
